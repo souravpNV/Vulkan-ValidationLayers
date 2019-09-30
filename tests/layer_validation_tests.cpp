@@ -76,6 +76,7 @@ bool ImageFormatIsSupported(VkPhysicalDevice phy, VkFormat format, VkImageTiling
 bool ImageFormatAndFeaturesSupported(VkPhysicalDevice phy, VkFormat format, VkImageTiling tiling, VkFormatFeatureFlags features) {
     VkFormatProperties format_props;
     vk::GetPhysicalDeviceFormatProperties(phy, format, &format_props);
+    std::cout << "linearTilingFeatures: " << format_props.linearTilingFeatures << std::endl;
     VkFormatFeatureFlags phy_features =
         (VK_IMAGE_TILING_OPTIMAL == tiling ? format_props.optimalTilingFeatures : format_props.linearTilingFeatures);
     return (features == (phy_features & features));
