@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <array>
+#include <vector>
 #include "range_vector.h"
 #ifndef SPARSE_CONTAINER_UNIT_TEST
 #include "vulkan/vulkan.h"
@@ -564,6 +565,86 @@ class OffsetRangeGenerator {
     // It doesn't have offset_count_.z and offset_index_.z. If the z > 1, it will be used in arrayLayer.
     VkOffset2D offset_count_ = {};
     VkOffset2D offset_index_ = {};
+};
+
+class LayoutRangeEncoder : public RangeEncoder {
+  public:
+    // The default constructor for default iterators
+    LayoutRangeEncoder() : limits_(), image_format_(), element_size_(), full_range_image_extent_() {}
+
+    LayoutRangeEncoder(const VkImageSubresourceRange& full_range, const VkExtent3D& full_range_image_extent,
+                       const AspectParameters* param, const VkFormat image_format);
+    // Create the encoder suitable to the full range (aspect mask *must* be canonical)
+    LayoutRangeEncoder(const VkImageSubresourceRange& full_range, const VkExtent3D& full_range_image_extent,
+                       const VkFormat image_format)
+        : LayoutRangeEncoder(full_range, full_range_image_extent, AspectParameters::Get(full_range.aspectMask), image_format) {}
+    LayoutRangeEncoder(const LayoutRangeEncoder& from) = default;
+
+    inline IndexType Encode(const VkSubresourceLayout& sub_layout, uint32_t layer, VkOffset3D offset) const {
+        assert(limits_.arrayLayer > layer);
+        assert(limits_.offset.x > offset.x);
+        assert(limits_.offset.y > offset.y);
+        assert(static_cast<int32_t>(limits_.arrayLayer) > offset.z);
+
+        return layer * sub_layout.arrayPitch + offset.z * sub_layout.depthPitch + offset.y * sub_layout.rowPitch +
+               offset.x * element_size_ + sub_layout.offset;
+    }
+
+    bool Decode(const VkSubresourceLayout& sub_layout, const IndexType& encode, uint32_t& out_layer, VkOffset3D& out_offset) const {
+        IndexType decode = encode - sub_layout.offset;
+        out_layer = static_cast<uint32_t>(decode / sub_layout.arrayPitch);
+        assert(limits_.arrayLayer > out_layer);
+        decode -= (out_layer * sub_layout.arrayPitch);
+        out_offset.z = static_cast<int32_t>(decode / sub_layout.depthPitch);
+        assert(static_cast<int32_t>(limits_.arrayLayer) > out_offset.z);
+        decode -= (out_offset.z * sub_layout.depthPitch);
+        out_offset.y = static_cast<int32_t>(decode / sub_layout.rowPitch);
+        assert(limits_.offset.y > out_offset.y);
+        decode -= (out_offset.y * sub_layout.rowPitch);
+        out_offset.x = static_cast<int32_t>(decode / element_size_);
+        assert(limits_.offset.x > out_offset.x);
+    }
+
+    inline const SubresourceOffset& Limits() const { return limits_; }
+    inline const VkDeviceSize& ElementSize() const { return element_size_; }
+
+  protected:
+  private:
+    const VkExtent3D full_range_image_extent_;
+    const VkFormat image_format_;
+    const VkDeviceSize element_size_;
+    const SubresourceOffset limits_;
+};
+
+class LayoutRangeGenerator {
+  public:
+    LayoutRangeGenerator()
+        : encoder_(nullptr), sub_layouts_(), baseArrayLayer_(), layerCount_(), offset_(), extent_(), offset_count_() {}
+    bool operator!=(const LayoutRangeGenerator& rhs) { return (pos_ != rhs.pos_) || (&encoder_ != &rhs.encoder_); }
+    LayoutRangeGenerator(const LayoutRangeEncoder& encoder);
+    LayoutRangeGenerator(const LayoutRangeEncoder& encoder, const std::vector<VkSubresourceLayout>& sub_layouts,
+                         const uint32_t baseArrayLayer, const uint32_t layerCount, const VkOffset3D& offset,
+                         const VkExtent3D& extent);
+    inline const IndexRange& operator*() const { return pos_; }
+    inline const IndexRange* operator->() const { return &pos_; }
+    LayoutRangeGenerator& operator++();
+    void SetPos();
+
+  private:
+    const LayoutRangeEncoder* encoder_;
+    const std::vector<VkSubresourceLayout> sub_layouts_;
+    const uint32_t baseArrayLayer_;
+    const uint32_t layerCount_;
+    const VkOffset3D offset_;
+    const VkExtent3D extent_;
+    IndexRange pos_;
+    IndexRange offset_z_base_;
+    IndexRange offset_layer_base_;
+    uint32_t layout_index_;
+
+    // offset_index_.x & offset_count_.x save layer_index & layerCount.
+    VkOffset3D offset_index_;
+    const VkOffset3D offset_count_;
 };
 
 // Designed for use with RangeMap of MappedType

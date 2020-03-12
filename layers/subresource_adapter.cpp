@@ -20,6 +20,7 @@
  */
 #include <cassert>
 #include "subresource_adapter.h"
+#include "vk_format_utils.h"
 
 namespace subresource_adapter {
 Subresource::Subresource(const RangeEncoder& encoder, const VkImageSubresource& subres)
@@ -439,6 +440,82 @@ OffsetRangeGenerator& OffsetRangeGenerator::operator++() {
         // we have to do each individual array of ranges
         pos_ += encoder_->MipSize();
         isr_pos_.SeekMip(isr_pos_.Limits().baseMipLevel + mip_index_);
+    }
+    return *this;
+}
+
+LayoutRangeEncoder::LayoutRangeEncoder(const VkImageSubresourceRange& full_range, const VkExtent3D& full_range_image_extent,
+                                       const AspectParameters* param, const VkFormat image_format)
+    : RangeEncoder(full_range, param),
+      full_range_image_extent_(full_range_image_extent),
+      limits_(param->AspectMask(), full_range.levelCount, full_range.layerCount, param->AspectCount(),
+              {static_cast<int32_t>(full_range_image_extent_.width), static_cast<int32_t>(full_range_image_extent_.height),
+               static_cast<int32_t>(full_range_image_extent_.depth)}),
+      image_format_(image_format),
+      element_size_(FormatElementSize(image_format)) {}
+
+static bool IsValid(const LayoutRangeEncoder& encoder, const uint32_t baseArrayLayer, const uint32_t layerCount,
+                    const VkOffset3D& offset, const VkExtent3D& extent) {
+    const auto& limits = encoder.Limits();
+    return ((baseArrayLayer + layerCount <= limits.arrayLayer) &&
+            ((offset.x + static_cast<int32_t>(extent.width)) <= limits.offset.x) &&
+            ((offset.y + static_cast<int32_t>(extent.height)) <= limits.offset.y) &&
+            ((offset.z + static_cast<int32_t>(extent.depth)) <= static_cast<int32_t>(limits.arrayLayer)));
+}
+
+LayoutRangeGenerator::LayoutRangeGenerator(const LayoutRangeEncoder& encoder, const std::vector<VkSubresourceLayout>& sub_layouts,
+                                           const uint32_t baseArrayLayer, const uint32_t layerCount, const VkOffset3D& offset,
+                                           const VkExtent3D& extent)
+    : encoder_(&encoder),
+      sub_layouts_(sub_layouts),
+      baseArrayLayer_(baseArrayLayer),
+      layerCount_(layerCount),
+      offset_(offset),
+      extent_(extent),
+      offset_count_({static_cast<int32_t>(layerCount), static_cast<int32_t>(extent.height), static_cast<int32_t>(extent.depth)}) {
+    assert(IsValid(*encoder_, baseArrayLayer_, layerCount_, offset_, extent_));
+    layout_index_ = 0;
+    SetPos();
+}
+
+void LayoutRangeGenerator::SetPos() {
+    pos_.begin = encoder_->Encode(sub_layouts_[layout_index_], baseArrayLayer_, offset_);
+    pos_.end = pos_.begin + encoder_->ElementSize() * extent_.width;
+    offset_z_base_ = pos_;
+    offset_layer_base_ = pos_;
+    offset_index_ = {0, 0, 0};
+}
+
+LayoutRangeGenerator& LayoutRangeGenerator::operator++() {
+    offset_index_.y++;
+
+    if (offset_index_.y < offset_count_.y) {
+        pos_ += sub_layouts_[layout_index_].rowPitch;
+    } else {
+        offset_index_.y = 0;
+        offset_index_.z++;
+        if (offset_index_.z < offset_count_.z) {
+            offset_z_base_ += sub_layouts_[layout_index_].depthPitch;
+            pos_ = offset_z_base_;
+        } else {
+            // offset_index_.x is layer.
+            offset_index_.z = 0;
+            offset_index_.x++;
+            if (offset_index_.x < offset_count_.x) {
+                offset_layer_base_ += sub_layouts_[layout_index_].arrayPitch;
+                offset_z_base_ = offset_layer_base_;
+                pos_ = offset_layer_base_;
+            } else {
+                offset_index_.x = 0;
+                layout_index_++;
+                if (layout_index_ < sub_layouts_.size()) {
+                    SetPos();
+                } else {
+                    // End
+                    pos_ = {0, 0};
+                }
+            }
+        }
     }
     return *this;
 }
