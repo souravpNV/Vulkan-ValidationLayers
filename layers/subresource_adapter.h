@@ -538,23 +538,30 @@ class SubresourceOffsetGenerator : public SubresourceOffset {
     const VkExtent2D limits_extent_;
 };
 
-class OffsetRangeGenerator {
+class ImageBaseRangeGenerator {
   public:
-    OffsetRangeGenerator() : encoder_(nullptr), isr_pos_(), pos_(), aspect_base_() {}
+    inline const IndexRange& operator*() const { return pos_; }
+    inline const IndexRange* operator->() const { return &pos_; }
+    virtual ImageBaseRangeGenerator* operator++() { return nullptr; }
+
+  protected:
+    IndexRange pos_;
+};
+
+class OffsetRangeGenerator : public ImageBaseRangeGenerator {
+  public:
+    OffsetRangeGenerator() : encoder_(nullptr), isr_pos_(), aspect_base_() {}
     bool operator!=(const OffsetRangeGenerator& rhs) { return (pos_ != rhs.pos_) || (&encoder_ != &rhs.encoder_); }
     OffsetRangeGenerator(const OffsetRangeEncoder& encoder);
     OffsetRangeGenerator(const OffsetRangeEncoder& encoder, const VkImageSubresourceRange& subres_range, const VkOffset3D& offset,
                          const VkExtent3D& extent);
-    inline const IndexRange& operator*() const { return pos_; }
-    inline const IndexRange* operator->() const { return &pos_; }
     SubresourceOffsetGenerator& GetSubresourceOffsetGenerator() { return isr_pos_; }
     SubresourceOffset& GetSubresourceOffset() { return isr_pos_; }
-    OffsetRangeGenerator& operator++();
+    virtual ImageBaseRangeGenerator* operator++();
 
   private:
     const OffsetRangeEncoder* encoder_;
     SubresourceOffsetGenerator isr_pos_;
-    IndexRange pos_;
     IndexRange aspect_base_;
     IndexRange offset_x_base_;
     IndexRange offset_y_base_;
@@ -616,7 +623,7 @@ class LayoutRangeEncoder : public RangeEncoder {
     const SubresourceOffset limits_;
 };
 
-class LayoutRangeGenerator {
+class LayoutRangeGenerator : public ImageBaseRangeGenerator {
   public:
     LayoutRangeGenerator()
         : encoder_(nullptr), sub_layouts_(), baseArrayLayer_(), layerCount_(), offset_(), extent_(), offset_count_() {}
@@ -625,9 +632,7 @@ class LayoutRangeGenerator {
     LayoutRangeGenerator(const LayoutRangeEncoder& encoder, const std::vector<VkSubresourceLayout>& sub_layouts,
                          const uint32_t baseArrayLayer, const uint32_t layerCount, const VkOffset3D& offset,
                          const VkExtent3D& extent);
-    inline const IndexRange& operator*() const { return pos_; }
-    inline const IndexRange* operator->() const { return &pos_; }
-    LayoutRangeGenerator& operator++();
+    virtual ImageBaseRangeGenerator* operator++();
     void SetPos();
 
   private:
@@ -637,7 +642,6 @@ class LayoutRangeGenerator {
     const uint32_t layerCount_;
     const VkOffset3D offset_;
     const VkExtent3D extent_;
-    IndexRange pos_;
     IndexRange offset_z_base_;
     IndexRange offset_layer_base_;
     uint32_t layout_index_;

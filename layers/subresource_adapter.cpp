@@ -328,7 +328,7 @@ static bool IsValid(const OffsetRangeEncoder& encoder, const VkImageSubresourceR
 
 OffsetRangeGenerator::OffsetRangeGenerator(const OffsetRangeEncoder& encoder, const VkImageSubresourceRange& subres_range,
                                            const VkOffset3D& offset, const VkExtent3D& extent)
-    : encoder_(&encoder), isr_pos_(encoder, subres_range, offset, extent), pos_(), aspect_base_() {
+    : encoder_(&encoder), isr_pos_(encoder, subres_range, offset, extent), aspect_base_() {
     assert(IsValid(encoder, isr_pos_.Limits(), isr_pos_.Limits_Offset(), isr_pos_.Limits_Extent()));
 
     // To see if we have a full range special case, need to compare the subres_range against the *encoders* limits
@@ -391,7 +391,7 @@ OffsetRangeGenerator::OffsetRangeGenerator(const OffsetRangeEncoder& encoder, co
     offset_index_ = {0, 0};
 }
 
-OffsetRangeGenerator& OffsetRangeGenerator::operator++() {
+ImageBaseRangeGenerator* OffsetRangeGenerator::operator++() {
     mip_index_++;
     // NOTE: If all selected mip levels are done at once, mip_count_ is set to one, not the number of selected mip_levels
     if (mip_index_ >= mip_count_) {
@@ -441,7 +441,7 @@ OffsetRangeGenerator& OffsetRangeGenerator::operator++() {
         pos_ += encoder_->MipSize();
         isr_pos_.SeekMip(isr_pos_.Limits().baseMipLevel + mip_index_);
     }
-    return *this;
+    return this;
 }
 
 LayoutRangeEncoder::LayoutRangeEncoder(const VkImageSubresourceRange& full_range, const VkExtent3D& full_range_image_extent,
@@ -486,7 +486,7 @@ void LayoutRangeGenerator::SetPos() {
     offset_index_ = {0, 0, 0};
 }
 
-LayoutRangeGenerator& LayoutRangeGenerator::operator++() {
+ImageBaseRangeGenerator* LayoutRangeGenerator::operator++() {
     offset_index_.y++;
 
     if (offset_index_.y < offset_count_.y) {
@@ -517,7 +517,7 @@ LayoutRangeGenerator& LayoutRangeGenerator::operator++() {
             }
         }
     }
-    return *this;
+    return this;
 }
 
 template <typename AspectTraits>
