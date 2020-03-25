@@ -329,143 +329,51 @@ class RangeGenerator {
     uint32_t aspect_index_ = 0;
 };
 
-class OffsetRangeEncoder;
-
-struct SubresourceOffset : public Subresource {
-    // It doesn't save offset.z. If the z > 1, the z will save in arrayLayer.
-    VkOffset2D offset;
-    SubresourceOffset() : Subresource(), offset() {}
-    SubresourceOffset(const SubresourceOffset& from) = default;
-    SubresourceOffset(const OffsetRangeEncoder& encoder, const VkImageSubresource& subres, const VkOffset3D& offset_);
-    SubresourceOffset(VkImageAspectFlags aspect_mask_, uint32_t mip_level_, uint32_t array_layer_, uint32_t aspect_index_,
-                      const VkOffset3D& offset_)
-        : Subresource(aspect_mask_, mip_level_, array_layer_, aspect_index_), offset({offset_.x, offset_.y}) {
-        if (offset_.z > 1) {
-            arrayLayer = offset_.z;
-        }
-    }
-    SubresourceOffset(VkImageAspectFlagBits aspect_, uint32_t mip_level_, uint32_t array_layer_, uint32_t aspect_index_,
-                      const VkOffset3D& offset_)
-        : SubresourceOffset(static_cast<VkImageAspectFlags>(aspect_), mip_level_, array_layer_, aspect_index_, offset_) {}
-
-    SubresourceOffset& operator=(const Subresource& sub) {
-        Subresource::operator=(sub);
-        return *this;
-    }
-};
-
-struct OffsetRangeEncoderLayout {
-    VkExtent3D subres_extent;
-    VkDeviceSize offset;
-    VkDeviceSize rowPitch;
-    VkDeviceSize arrayPitch;
-    VkDeviceSize aspectPitch;
-};
-
-class OffsetRangeEncoder : public RangeEncoder {
+class ImageRangeEncoder : public RangeEncoder {
   public:
     // The default constructor for default iterators
-    OffsetRangeEncoder() : image_(nullptr) {}
+    ImageRangeEncoder() : device_(), image_(nullptr), element_size_() {}
 
-    OffsetRangeEncoder(const IMAGE_STATE& image, const AspectParameters* param);
-    // Create the encoder suitable to the full range (aspect mask *must* be canonical)
-    OffsetRangeEncoder(const IMAGE_STATE& image);
-    OffsetRangeEncoder(const OffsetRangeEncoder& from) = default;
-
-    inline IndexType Encode(const SubresourceOffset& pos) const;
-
-    inline IndexType Encode(const VkImageSubresource& subres, const VkOffset3D& offset) const {
-        return Encode(SubresourceOffset(*this, subres, offset));
-    }
-    SubresourceOffset Decode(const IndexType& index) const;
-
-    inline const OffsetRangeEncoderLayout& GetOffsetRangeEncoderLayout(uint32_t mip_level) const { return layouts_[mip_level]; }
-
-  private:
-    const IMAGE_STATE* image_;
-    std::vector<OffsetRangeEncoderLayout> layouts_;
-};
-
-class ImageBaseRangeGenerator {
-  public:
-    inline const IndexRange& operator*() const { return pos_; }
-    inline const IndexRange* operator->() const { return &pos_; }
-    virtual ImageBaseRangeGenerator* operator++() { return nullptr; }
-
-  protected:
-    IndexRange pos_;
-};
-
-class OffsetRangeGenerator : public ImageBaseRangeGenerator {
-  public:
-    OffsetRangeGenerator() : encoder_(nullptr), subres_range_(), offset_(), extent_() {}
-    bool operator!=(const OffsetRangeGenerator& rhs) { return (pos_ != rhs.pos_) || (&encoder_ != &rhs.encoder_); }
-    OffsetRangeGenerator(const OffsetRangeEncoder& encoder);
-    OffsetRangeGenerator(const OffsetRangeEncoder& encoder, const VkImageSubresourceRange& subres_range, const VkOffset3D& offset,
-                         const VkExtent3D& extent);
-    virtual ImageBaseRangeGenerator* operator++();
-    void SetPos();
-
-  private:
-    const OffsetRangeEncoder* encoder_;
-    const VkImageSubresourceRange subres_range_;
-    const VkOffset3D offset_;
-    const VkExtent3D extent_;
-    IndexRange offset_offset_y_base_;
-    IndexRange offset_layer_base_;
-    IndexRange offset_aspect_base_;
-    uint32_t offset_y_index_;
-    uint32_t offset_y_count_;
-    uint32_t aspect_count_ = 0;
-    uint32_t aspect_index_ = 0;
-
-    // It doesn't have offset_z. If the z > 1, it will be used in arrayLayer.
-    uint32_t arrayLayer_index_;
-    uint32_t layer_count_;
-    uint32_t mip_level_index_;
-};
-
-class LayoutRangeEncoder : public RangeEncoder {
-  public:
-    // The default constructor for default iterators
-    LayoutRangeEncoder() : device_(), image_(nullptr), element_size_() {}
-
-    LayoutRangeEncoder(const VkDevice device, const IMAGE_STATE& image, const AspectParameters* param);
-    LayoutRangeEncoder(const VkDevice device, const IMAGE_STATE& image);
-    LayoutRangeEncoder(const LayoutRangeEncoder& from) = default;
+    ImageRangeEncoder(const VkDevice device, const IMAGE_STATE& image, const AspectParameters* param);
+    ImageRangeEncoder(const VkDevice device, const IMAGE_STATE& image);
+    ImageRangeEncoder(const ImageRangeEncoder& from) = default;
 
     inline IndexType Encode(uint32_t layer, VkOffset3D offset) const;
     void Decode(const IndexType& encode, uint32_t& out_layer, VkOffset3D& out_offset) const;
 
     inline const VkDeviceSize& ElementSize() const { return element_size_; }
-    inline const VkSubresourceLayout& SubresourceLayout() const { return current_subres_layout; }
-    inline void SetSubresource(const VkImageSubresource& subres);
-    inline VkExtent3D SubresourceExtent() { return current_subres_extent; }
+    inline const VkSubresourceLayout& SubresourceLayout() const { return current_subres_layout_; }
+    const VkSubresourceLayout& SubresourceLayout(const VkImageSubresource& subres);
+    inline VkExtent3D SubresourceExtent(int mip_level) { return subres_extents_[mip_level]; }
 
   private:
     const VkDeviceSize element_size_;
     const VkDevice device_;
     const IMAGE_STATE* image_;
-    VkImageSubresource current_subres;
-    VkExtent3D current_subres_extent;
-    VkSubresourceLayout current_subres_layout;
+    std::vector<VkExtent3D> subres_extents_;
+    std::vector<VkSubresourceLayout> optimal_subres_layouts_;
+    VkImageSubresource current_subres_;
+    VkSubresourceLayout current_subres_layout_;
 };
 
-class LayoutRangeGenerator : public ImageBaseRangeGenerator {
+class ImageRangeGenerator {
   public:
-    LayoutRangeGenerator() : encoder_(nullptr), subres_range_(), offset_(), extent_() {}
-    bool operator!=(const LayoutRangeGenerator& rhs) { return (pos_ != rhs.pos_) || (&encoder_ != &rhs.encoder_); }
-    LayoutRangeGenerator(LayoutRangeEncoder& encoder);
-    LayoutRangeGenerator(LayoutRangeEncoder& encoder, const VkImageSubresourceRange& subres_range, const VkOffset3D& offset,
+    ImageRangeGenerator() : encoder_(nullptr), subres_range_(), offset_(), extent_() {}
+    bool operator!=(const ImageRangeGenerator& rhs) { return (pos_ != rhs.pos_) || (&encoder_ != &rhs.encoder_); }
+    ImageRangeGenerator(ImageRangeEncoder& encoder);
+    ImageRangeGenerator(ImageRangeEncoder& encoder, const VkImageSubresourceRange& subres_range, const VkOffset3D& offset,
                          const VkExtent3D& extent);
-    virtual ImageBaseRangeGenerator* operator++();
+    inline const IndexRange& operator*() const { return pos_; }
+    inline const IndexRange* operator->() const { return &pos_; }
+    ImageRangeGenerator* operator++();
     void SetPos();
 
   private:
-    LayoutRangeEncoder* encoder_;
+    ImageRangeEncoder* encoder_;
     const VkImageSubresourceRange subres_range_;
     const VkOffset3D offset_;
     const VkExtent3D extent_;
+    IndexRange pos_;
     IndexRange offset_offset_y_base_;
     IndexRange offset_layer_base_;
     uint32_t offset_y_index_;
