@@ -334,44 +334,17 @@ void CommandBufferAccessContext::NextRenderPass(const RENDER_PASS_STATE &rp_stat
     current_context_ = &current_renderpass_context_->CurrentContext();
 }
 
-void GetImageRangeEncoderAndGenerator(const CMD_BUFFER_STATE &cmd, const IMAGE_STATE &image,
-                                      const VkImageSubresourceRange &subresource_range, const VkOffset3D &offset,
-                                      const VkExtent3D &extent, std::unique_ptr<subresource_adapter::RangeEncoder> &out_encoder,
-                                      std::unique_ptr<subresource_adapter::ImageBaseRangeGenerator> &out_generator) {
-    std::vector<VkSubresourceLayout> subres_layouts;
-    switch (image.createInfo.tiling) {
-        case VK_IMAGE_TILING_OPTIMAL:
-            out_encoder =
-                std::unique_ptr<subresource_adapter::OffsetRangeEncoder>(new subresource_adapter::OffsetRangeEncoder(image));
-            out_generator =
-                std::unique_ptr<subresource_adapter::OffsetRangeGenerator>(new subresource_adapter::OffsetRangeGenerator(
-                    *(subresource_adapter::OffsetRangeEncoder *)out_encoder.get(), subresource_range, offset, extent));
-            break;
-        case VK_IMAGE_TILING_LINEAR:
-        case VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT:
-            out_encoder = std::unique_ptr<subresource_adapter::LayoutRangeEncoder>(
-                new subresource_adapter::LayoutRangeEncoder(cmd.device, image));
-            out_generator =
-                std::unique_ptr<subresource_adapter::LayoutRangeGenerator>(new subresource_adapter::LayoutRangeGenerator(
-                    *(subresource_adapter::LayoutRangeEncoder *)out_encoder.get(), subresource_range, offset, extent));
-            break;
-        default:
-            break;
-    }
-}
-
 HazardResult AccessTrackerContext::DetectHazard(const CMD_BUFFER_STATE &cmd, const IMAGE_STATE &image,
                                                 SyncStageAccessIndex current_usage, const VkImageSubresourceLayers &subresource,
                                                 const VkOffset3D &offset, const VkExtent3D &extent) const {
     // TODO: replace the encoder/generator with offset3D/extent3D aware versions
     VkImageSubresourceRange subresource_range = {subresource.aspectMask, subresource.mipLevel, 1, subresource.baseArrayLayer,
                                                  subresource.layerCount};
-    std::unique_ptr<subresource_adapter::RangeEncoder> encoder;
-    std::unique_ptr<subresource_adapter::ImageBaseRangeGenerator> range_gen;
-    GetImageRangeEncoderAndGenerator(cmd, image, subresource_range, offset, extent, encoder, range_gen);
+    subresource_adapter::ImageRangeEncoder encoder(cmd.device, image);
+    subresource_adapter::ImageRangeGenerator range_gen(encoder, subresource_range, offset, extent);
     VulkanTypedHandle image_handle(image.image, kVulkanObjectTypeImage);
-    for (; (*range_gen.get())->non_empty(); ++(*range_gen)) {
-        HazardResult hazard = DetectHazard(image_handle, current_usage, **range_gen);
+    for (; range_gen->non_empty(); ++range_gen) {
+        HazardResult hazard = DetectHazard(image_handle, current_usage, *range_gen);
         if (hazard.hazard) return hazard;
     }
     return HazardResult();
@@ -410,12 +383,11 @@ HazardResult DetectImageBarrierHazard(const CMD_BUFFER_STATE &cmd, const AccessT
     auto subresource_range = NormalizeSubresourceRange(image.createInfo, barrier.subresourceRange);
     const VulkanTypedHandle image_handle(image.image, kVulkanObjectTypeImage);
     const auto src_access_scope = SyncStageAccess::AccessScope(src_stage_accesses, barrier.srcAccessMask);
-    std::unique_ptr<subresource_adapter::RangeEncoder> encoder;
-    std::unique_ptr<subresource_adapter::ImageBaseRangeGenerator> range_gen;
-    GetImageRangeEncoderAndGenerator(cmd, image, subresource_range, {0, 0, 0}, image.createInfo.extent, encoder, range_gen);
-    for (; (*range_gen.get())->non_empty(); ++(*range_gen)) {
+    subresource_adapter::ImageRangeEncoder encoder(cmd.device, image);
+    subresource_adapter::ImageRangeGenerator range_gen(encoder, subresource_range, {0, 0, 0}, image.createInfo.extent);
+    for (; range_gen->non_empty(); ++range_gen) {
         HazardResult hazard = context.DetectBarrierHazard(image_handle, SyncStageAccessIndex::SYNC_IMAGE_LAYOUT_TRANSITION,
-                                                          src_exec_scope, src_access_scope, **range_gen);
+                                                          src_exec_scope, src_access_scope, *range_gen);
         if (hazard.hazard) return hazard;
     }
     return HazardResult();
@@ -580,17 +552,15 @@ void AccessTrackerContext::UpdateAccessState(const CMD_BUFFER_STATE &cmd, const 
     // TODO: replace the encoder/generator with offset3D aware versions
     VkImageSubresourceRange subresource_range = {subresource.aspectMask, subresource.mipLevel, 1, subresource.baseArrayLayer,
                                                  subresource.layerCount};
-    VkExtent3D subresource_extent = GetImageSubresourceExtent(&image, &subresource);
-    std::unique_ptr<subresource_adapter::RangeEncoder> encoder;
-    std::unique_ptr<subresource_adapter::ImageBaseRangeGenerator> range_gen;
-    GetImageRangeEncoderAndGenerator(cmd, image, subresource_range, offset, extent, encoder, range_gen);
+    subresource_adapter::ImageRangeEncoder encoder(cmd.device, image);
+    subresource_adapter::ImageRangeGenerator range_gen(encoder, subresource_range, offset, extent);
     const VulkanTypedHandle handle(image.image, kVulkanObjectTypeImage);
     auto *tracker = GetAccessTracker(handle);
     assert(tracker);
 
     UpdateMemoryAccessStateFunctor action(handle, *this, current_usage, tag);
-    for (; (*range_gen.get())->non_empty(); ++(*range_gen)) {
-        UpdateMemoryAccessState(&tracker->GetCurrentAccessMap(), **range_gen, action);
+    for (; range_gen->non_empty(); ++range_gen) {
+        UpdateMemoryAccessState(&tracker->GetCurrentAccessMap(), *range_gen, action);
     }
 }
 
@@ -862,14 +832,14 @@ void SyncValidator::ApplyImageBarriers(const CMD_BUFFER_STATE &cmd, AccessTracke
         auto *accesses = &tracker->GetCurrentAccessMap();
 
         auto subresource_range = NormalizeSubresourceRange(image->createInfo, barrier.subresourceRange);
-        std::unique_ptr<subresource_adapter::RangeEncoder> encoder;
-        std::unique_ptr<subresource_adapter::ImageBaseRangeGenerator> range_gen;
-        GetImageRangeEncoderAndGenerator(cmd, *image, subresource_range, {0, 0, 0}, image->createInfo.extent, encoder, range_gen);
+        subresource_adapter::ImageRangeEncoder encoder(cmd.device, *image);
+        subresource_adapter::ImageRangeGenerator range_gen(encoder, subresource_range, {0, 0, 0}, image->createInfo.extent);
+
         const ApplyMemoryAccessBarrierFunctor barrier_action(src_exec_scope, AccessScope(src_stage_accesses, barrier.srcAccessMask),
                                                              dst_exec_scope,
                                                              AccessScope(dst_stage_accesses, barrier.dstAccessMask));
-        for (; (*range_gen)->non_empty(); ++(*range_gen)) {
-            UpdateMemoryAccessState(accesses, **range_gen, barrier_action);
+        for (; range_gen->non_empty(); ++range_gen) {
+            UpdateMemoryAccessState(accesses, *range_gen, barrier_action);
         }
     }
 }
