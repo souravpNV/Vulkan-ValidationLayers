@@ -72,6 +72,8 @@ struct range {
         return *this;
     }
 
+    inline range operator+(const index_type &offset) const { return range(begin + offset, end + offset); }
+
     // for a reversible/transitive < operator compare first on begin and then end
     // only less or begin is less or if end is less when begin is equal
     bool operator<(const range &rhs) const {
@@ -111,6 +113,7 @@ struct range {
 
     range() : begin(), end() {}
     range(const index_type &begin_, const index_type &end_) : begin(begin_), end(end_) {}
+    range(const range &original) : begin(original.begin), end(original.end) {}
 };
 
 template <typename Range>
