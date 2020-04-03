@@ -1441,3 +1441,59 @@ void SyncValidator::PreCallRecordCmdBlitImage(VkCommandBuffer commandBuffer, VkI
         }
     }
 }
+
+bool DetectDescriptorSetsHazard(std::vector<PER_SET>& sets) {}
+
+bool SyncValidator::PreCallValidateCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) const {
+    bool skip = false;
+    /*skip |= ValidateCmdDrawType(commandBuffer, false, VK_PIPELINE_BIND_POINT_COMPUTE, CMD_DISPATCH, "vkCmdDispatch()",
+                                VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatch-commandBuffer-cmdpool", "VUID-vkCmdDispatch-renderpass",
+                                "VUID-vkCmdDispatch-None-02700", kVUIDUndefined, kVUIDUndefined);*/
+    const auto *cb_state = Get<CMD_BUFFER_STATE>(commandBuffer);
+    const auto last_bound_it = cb_state->lastBound.find(VK_PIPELINE_BIND_POINT_COMPUTE);
+    if (last_bound_it == cb_state->lastBound.cend()) {
+        return skip;
+    }
+    skip |= DetectDescriptorSetsHazard(last_bound_it->second.per_set);
+    return skip;
+}
+
+void SyncValidator::PostCallRecordCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) {
+    CMD_BUFFER_STATE *cb_state = GetCBState(commandBuffer);
+    UpdateStateCmdDrawDispatchType(cb_state, VK_PIPELINE_BIND_POINT_COMPUTE);
+}
+
+/*
+bool SyncValidator::PreCallValidateCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) const {
+    bool skip = ValidateCmdDrawType(commandBuffer, false, VK_PIPELINE_BIND_POINT_COMPUTE, CMD_DISPATCHINDIRECT,
+                                    "vkCmdDispatchIndirect()", VK_QUEUE_COMPUTE_BIT,
+                                    "VUID-vkCmdDispatchIndirect-commandBuffer-cmdpool", "VUID-vkCmdDispatchIndirect-renderpass",
+                                    "VUID-vkCmdDispatchIndirect-None-02700", kVUIDUndefined, kVUIDUndefined);
+    const BUFFER_STATE *buffer_state = GetBufferState(buffer);
+    skip |= ValidateMemoryIsBoundToBuffer(buffer_state, "vkCmdDispatchIndirect()", "VUID-vkCmdDispatchIndirect-buffer-02708");
+    skip |=
+        ValidateBufferUsageFlags(buffer_state, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true, "VUID-vkCmdDispatchIndirect-buffer-02709",
+                                 "vkCmdDispatchIndirect()", "VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT");
+    return skip;
+}
+
+void SyncValidator::PostCallRecordCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {
+    CMD_BUFFER_STATE *cb_state = GetCBState(commandBuffer);
+    UpdateStateCmdDrawDispatchType(cb_state, VK_PIPELINE_BIND_POINT_COMPUTE);
+    BUFFER_STATE *buffer_state = GetBufferState(buffer);
+    AddCommandBufferBindingBuffer(cb_state, buffer_state);
+}
+
+bool SyncValidator::PreCallValidateCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
+                                           uint32_t firstVertex, uint32_t firstInstance) const {
+    return ValidateCmdDrawType(commandBuffer, false, VK_PIPELINE_BIND_POINT_GRAPHICS, CMD_DRAW, "vkCmdDraw()",
+                               VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdDraw-commandBuffer-cmdpool", "VUID-vkCmdDraw-renderpass",
+                               "VUID-vkCmdDraw-None-02700", "VUID-vkCmdDraw-commandBuffer-02701", "VUID-vkCmdDraw-None-02720");
+}
+
+void SyncValidator::PostCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
+                                          uint32_t firstVertex, uint32_t firstInstance) {
+    CMD_BUFFER_STATE *cb_state = GetCBState(commandBuffer);
+    UpdateStateCmdDrawType(cb_state, VK_PIPELINE_BIND_POINT_GRAPHICS);
+}
+*/
