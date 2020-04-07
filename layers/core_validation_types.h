@@ -388,14 +388,16 @@ class IMAGE_STATE : public BINDABLE {
     VkSwapchainKHR create_from_swapchain;
     VkSwapchainKHR bind_swapchain;
     uint32_t bind_swapchain_imageIndex;
-    image_layout_map::Encoder range_encoder;
+    const image_layout_map::Encoder subresource_encoder;  // Subresource resolution encoder
+    // const subresource_adapter::ImageRangeEncoder fragment_encoder; //Fragment resolution encoder
+    const VkDevice store_device_as_workaround;  // TODO REMOVE WHEN encoder can be const
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
     uint64_t external_format_android;
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
 
     std::vector<VkSparseImageMemoryRequirements> sparse_requirements;
-    IMAGE_STATE(VkImage img, const VkImageCreateInfo *pCreateInfo);
+    IMAGE_STATE(VkDevice dev, VkImage img, const VkImageCreateInfo *pCreateInfo);
     IMAGE_STATE(IMAGE_STATE const &rh_obj) = delete;
 
     std::unordered_set<VkImage> aliasing_images;
