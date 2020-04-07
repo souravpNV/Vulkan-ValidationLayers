@@ -388,9 +388,9 @@ class IMAGE_STATE : public BINDABLE {
     VkSwapchainKHR create_from_swapchain;
     VkSwapchainKHR bind_swapchain;
     uint32_t bind_swapchain_imageIndex;
-    const image_layout_map::Encoder subresource_encoder;  // Subresource resolution encoder
-    // const subresource_adapter::ImageRangeEncoder fragment_encoder; //Fragment resolution encoder
-    const VkDevice store_device_as_workaround;  // TODO REMOVE WHEN encoder can be const
+    const image_layout_map::Encoder subresource_encoder;            // Subresource resolution encoder
+    const subresource_adapter::ImageRangeEncoder fragment_encoder;  // Fragment resolution encoder
+    const VkDevice store_device_as_workaround;                      // TODO REMOVE WHEN encoder can be const
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
     uint64_t external_format_android;
