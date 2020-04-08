@@ -93,10 +93,9 @@ class RangeEncoder {
           lower_bound_with_start_function_(nullptr),
           aspect_base_{0, 0, 0} {}
 
-    RangeEncoder(const VkImageSubresourceRange& full_range, const AspectParameters* param);
+    RangeEncoder(const IMAGE_STATE& image_state, const AspectParameters* param);
     // Create the encoder suitable to the full range (aspect mask *must* be canonical)
-    RangeEncoder(const VkImageSubresourceRange& full_range)
-        : RangeEncoder(full_range, AspectParameters::Get(full_range.aspectMask)) {}
+    RangeEncoder(const IMAGE_STATE& image_state) : RangeEncoder(image_state, AspectParameters::Get(image_state)) {}
     RangeEncoder(const RangeEncoder& from) = default;
     ;
 

@@ -23,6 +23,7 @@
 #include "vk_format_utils.h"
 #include "state_tracker.h"
 #include "core_validation_types.h"
+#include <iostream>
 
 namespace subresource_adapter {
 Subresource::Subresource(const RangeEncoder& encoder, const VkImageSubresource& subres)
@@ -295,11 +296,23 @@ ImageRangeEncoder::ImageRangeEncoder(const VkDevice device, const IMAGE_STATE& i
                     subres_layouts_.push_back(layout);
                     break;
                 case VK_IMAGE_TILING_LINEAR:
-                case VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT:
-                    subres = {VkImageAspectFlags(aspectBit), mip_index, 0};
+                    subres = {VkImageAspectFlags(aspectBit), mip_index, limits_.arrayLayer};
                     DispatchGetImageSubresourceLayout(device, image_->image, &subres, &layout);
+                    std::cout << "VK_IMAGE_TILING_LINEAR subres: " << subres.arrayLayer << "  " << subres.aspectMask << "  "
+                              << subres.mipLevel << std::endl;
+                    std::cout << "VK_IMAGE_TILING_LINEAR layout: " << layout.arrayPitch << "  " << layout.depthPitch << "  "
+                              << layout.offset << "  " << layout.rowPitch << "  " << layout.size << std::endl;
                     subres_layouts_.push_back(layout);
                     break;
+                case VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT:
+                    subres = {VkImageAspectFlags(aspectBit), mip_index, limits_.arrayLayer};
+                    DispatchGetImageSubresourceLayout(device, image_->image, &subres, &layout);
+                    std::cout << "VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT subres: " << subres.arrayLayer << "  "
+                              << subres.aspectMask << "  " << subres.mipLevel << std::endl;
+                    std::cout << "VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT layout: " << layout.arrayPitch << "  "
+                              << layout.depthPitch << "  " << layout.offset << "  " << layout.rowPitch << "  " << layout.size
+                              << std::endl;
+                    subres_layouts_.push_back(layout);
                 default:
                     break;
             }
@@ -501,6 +514,81 @@ struct Multiplane3AspectTraits {
     }
 };
 
+struct DRMFormatModifierPlane1AspectTraits {
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT = 0x00000080, >> 7 - 1 -> 0
+    static constexpr uint32_t kAspectCount = 1;
+    static constexpr VkImageAspectFlags kAspectMask = (VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT);
+    static uint32_t MaskIndex(VkImageAspectFlags mask) { return 0; };
+    static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
+        static std::array<VkImageAspectFlagBits, kAspectCount> kAspectBits{{VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT}};
+        return kAspectBits;
+    }
+};
+
+struct DRMFormatModifierPlane2AspectTraits {
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT = 0x00000080, >> 7 - 1 -> 0
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT = 0x00000100, >> 7 - 1 -> 1
+    static constexpr uint32_t kAspectCount = 2;
+    static constexpr VkImageAspectFlags kAspectMask =
+        (VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT | VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT);
+    static uint32_t MaskIndex(VkImageAspectFlags mask) {
+        uint32_t index = (mask >> 7) - 1;
+        assert((index == 0) || (index == 1));
+        return index;
+    };
+    static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
+        static std::array<VkImageAspectFlagBits, kAspectCount> kAspectBits{
+            {VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT, VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT}};
+        return kAspectBits;
+    }
+};
+
+struct DRMFormatModifierPlane3AspectTraits {
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT = 0x00000080, >> 7 - 1 -> 0
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT = 0x00000100, >> 7 - 1 -> 1
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT = 0x00000200, >> 7 - 1 -> 3
+    static constexpr uint32_t kAspectCount = 3;
+    static constexpr VkImageAspectFlags kAspectMask =
+        (VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT | VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT | VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT);
+    static uint32_t MaskIndex(VkImageAspectFlags mask) {
+        uint32_t index = (mask >> 7) - 1;
+        index = index > 1 ? 2 : index;
+        assert((index == 0) || (index == 1) || (index == 2));
+        return index;
+    };
+    static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
+        static std::array<VkImageAspectFlagBits, kAspectCount> kAspectBits{{VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT,
+                                                                            VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT,
+                                                                            VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT}};
+        return kAspectBits;
+    }
+};
+
+struct DRMFormatModifierPlane4AspectTraits {
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT = 0x00000080, >> 7 - 1 -> 0
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT = 0x00000100, >> 7 - 1 -> 1
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT = 0x00000200, >> 7 - 1 -> 3
+    // VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT = 0x00000400, >> 7 - 1 -> 7
+    static constexpr uint32_t kAspectCount = 4;
+    static constexpr VkImageAspectFlags kAspectMask =
+        (VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT | VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT | VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT |
+         VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT);
+    static uint32_t MaskIndex(VkImageAspectFlags mask) {
+        uint32_t index = (mask >> 7) - 1;
+        if (index > 1) {
+            index = index < 7 ? 2 : 3;
+        }
+        assert((index == 0) || (index == 1) || (index == 2) || (index == 3));
+        return index;
+    };
+    static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
+        static std::array<VkImageAspectFlagBits, kAspectCount> kAspectBits{
+            {VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT, VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT, VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT,
+             VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT}};
+        return kAspectBits;
+    }
+};
+
 // Create the encoder parameter suitable to the full range aspect mask (*must* be canonical)
 const AspectParameters* AspectParameters::Get(VkImageAspectFlags aspect_mask) {
     // We need a persitent instance of each specialist containing only a VTABLE each
@@ -531,6 +619,36 @@ const AspectParameters* AspectParameters::Get(VkImageAspectFlags aspect_mask) {
             break;
         case Multiplane3AspectTraits::kAspectMask:
             param = &kMutliplane3Param;
+            break;
+        default:
+            assert(false);
+            param = &kNullAspect;
+    }
+    return param;
+}
+
+// Create the encoder parameter suitable to the full range aspect mask (*must* be canonical)
+const AspectParameters* AspectParameters::Get(uint32_t drmFormatModifierPlaneCount) {
+    // We need a persitent instance of each specialist containing only a VTABLE each
+    static const AspectParametersImpl<DRMFormatModifierPlane1AspectTraits> kPlane1Param;
+    static const AspectParametersImpl<DRMFormatModifierPlane2AspectTraits> kPlane2Param;
+    static const AspectParametersImpl<DRMFormatModifierPlane3AspectTraits> kPlane3Param;
+    static const AspectParametersImpl<DRMFormatModifierPlane4AspectTraits> kPlane4Param;
+    static const AspectParametersImpl<NullAspectTraits> kNullAspect;
+
+    const AspectParameters* param;
+    switch (drmFormatModifierPlaneCount) {
+        case 1:
+            param = &kPlane1Param;
+            break;
+        case 2:
+            param = &kPlane2Param;
+            break;
+        case 3:
+            param = &kPlane3Param;
+            break;
+        case 4:
+            param = &kPlane4Param;
             break;
         default:
             assert(false);
