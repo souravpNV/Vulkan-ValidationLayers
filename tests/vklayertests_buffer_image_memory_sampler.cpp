@@ -9460,13 +9460,44 @@ TEST_F(VkLayerTest, SyncCopyLinearMultiPlanarHazards) {
         printf("%s test requires KHR multiplane extensions, not available.  Skipping.\n", kSkipPrefix);
         return;
     }
+    bool support_drm = false;
+    support_drm = DeviceExtensionSupported(gpu(), nullptr, VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME);
+    if (support_drm) {
+        printf("Support VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME \n");
+        m_device_extension_names.push_back(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME);
+    } else {
+        printf("NOT Support VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME \n");
+    }
 
     ASSERT_NO_FATAL_FAILURE(InitState());
 
     VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     VkFormat format = VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM;
     VkImageObj image_a(m_device);
-    const auto image_ci = VkImageObj::ImageCreateInfo2D(128, 128, 1, 1, format, usage, VK_IMAGE_TILING_LINEAR);
+    VkImageCreateInfo image_ci = VkImageObj::ImageCreateInfo2D(128, 128, 1, 1, format, usage, VK_IMAGE_TILING_LINEAR);
+
+    if (support_drm) {
+        image_ci.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
+        // PFN_vkGetImageDrmFormatModifierPropertiesEXT vkGetImageDrmFormatModifierPropertiesEXT =
+        //    (PFN_vkGetImageDrmFormatModifierPropertiesEXT)vk::GetDeviceProcAddr(m_device->handle(),
+        //                                                                        "vkGetImageDrmFormatModifierPropertiesEXT");
+        // VkDrmFormatModifierPropertiesEXT drm_formant_props;
+        // vkGetImageDrmFormatModifierPropertiesEXT(device(),,&drm_formant_props );
+        auto drm_modifier_ci = lvl_init_struct<VkImageDrmFormatModifierListCreateInfoEXT>();
+        uint64_t drm_format_mod = 1;
+        drm_modifier_ci.pDrmFormatModifiers = &drm_format_mod;
+        drm_modifier_ci.drmFormatModifierCount = 1;
+        image_ci.pNext = &drm_modifier_ci;
+        VkImageObj image_aa(m_device);
+        image_aa.Init(image_ci);
+        if (image_aa.image() != VK_NULL_HANDLE) {
+            printf("Create DRM_FORMAT_MODIFIER image \n");
+        } else {
+            printf("NOT Create DRM_FORMAT_MODIFIER image \n");
+        }
+    }
+    image_ci.tiling = VK_IMAGE_TILING_LINEAR;
+
     // Verify format
     bool supported = ImageFormatAndFeaturesSupported(instance(), gpu(), image_ci,
                                                      VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
