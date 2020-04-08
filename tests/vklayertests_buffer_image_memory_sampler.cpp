@@ -9527,9 +9527,14 @@ TEST_F(VkLayerTest, SyncCopyLinearMultiPlanarHazards) {
     m_errorMonitor->ExpectSuccess();
     vk::CmdCopyImage(cb, image_c.handle(), VK_IMAGE_LAYOUT_GENERAL, image_a.handle(), VK_IMAGE_LAYOUT_GENERAL, 1,
                      &region_plane0_to_plane0);
+    m_errorMonitor->VerifyNotFound();
+    printf("5555555555555555555555555\n");
+
+    m_errorMonitor->ExpectSuccess();
     vk::CmdCopyImage(cb, image_c.handle(), VK_IMAGE_LAYOUT_GENERAL, image_a.handle(), VK_IMAGE_LAYOUT_GENERAL, 1,
                      &region_plane0_to_plane1);
     m_errorMonitor->VerifyNotFound();
+    printf("666666666666666666666666\n");
 
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT, "SYNC-HAZARD-WRITE_AFTER_WRITE");
     vk::CmdCopyImage(cb, image_c.handle(), VK_IMAGE_LAYOUT_GENERAL, image_a.handle(), VK_IMAGE_LAYOUT_GENERAL, 1,

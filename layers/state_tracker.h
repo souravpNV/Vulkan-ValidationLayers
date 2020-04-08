@@ -277,7 +277,7 @@ static inline VkExtent3D GetImageSubresourceExtent(const IMAGE_STATE* img, const
 
 // For image copies between compressed/uncompressed formats, the extent is provided in source image texels
 // Destination image texel extents must be adjusted by block size for the dest validation checks
-static VkExtent3D GetAdjustedDestImageExtent(VkFormat src_format, VkFormat dst_format, VkExtent3D extent) {
+static inline VkExtent3D GetAdjustedDestImageExtent(VkFormat src_format, VkFormat dst_format, VkExtent3D extent) {
     VkExtent3D adjusted_extent = extent;
     if ((FormatIsCompressed(src_format) || FormatIsSinglePlane_422(src_format)) &&
         !(FormatIsCompressed(dst_format) || FormatIsSinglePlane_422(dst_format))) {
@@ -300,7 +300,7 @@ static inline bool IsExtentSizeZero(const VkExtent3D* extent) {
     return ((extent->width == 0) || (extent->height == 0) || (extent->depth == 0));
 }
 
-static VkDeviceSize GetBufferSizeFromCopyImage(const VkBufferImageCopy& region, VkFormat image_format) {
+static inline VkDeviceSize GetBufferSizeFromCopyImage(const VkBufferImageCopy& region, VkFormat image_format) {
     VkDeviceSize buffer_size = 0;
     VkExtent3D copy_extent = region.imageExtent;
     VkDeviceSize buffer_width = (0 == region.bufferRowLength ? copy_extent.width : region.bufferRowLength);

@@ -23,6 +23,7 @@
 #include "vk_format_utils.h"
 #include "state_tracker.h"
 #include "core_validation_types.h"
+#include <iostream>
 
 namespace subresource_adapter {
 Subresource::Subresource(const RangeEncoder& encoder, const VkImageSubresource& subres)
@@ -296,8 +297,12 @@ ImageRangeEncoder::ImageRangeEncoder(const VkDevice device, const IMAGE_STATE& i
                     break;
                 case VK_IMAGE_TILING_LINEAR:
                 case VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT:
-                    subres = {VkImageAspectFlags(aspectBit), mip_index, 0};
+                    subres = {VkImageAspectFlags(aspectBit), mip_index, limits_.arrayLayer};
                     DispatchGetImageSubresourceLayout(device, image_->image, &subres, &layout);
+                    std::cout << "subres: " << subres.arrayLayer << "  " << subres.aspectMask << "  " << subres.mipLevel
+                              << std::endl;
+                    std::cout << "layout: " << layout.arrayPitch << "  " << layout.depthPitch << "  " << layout.offset << "  "
+                              << layout.rowPitch << "  " << layout.size << std::endl;
                     subres_layouts_.push_back(layout);
                     break;
                 default:
