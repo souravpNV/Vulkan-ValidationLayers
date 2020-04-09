@@ -9488,15 +9488,7 @@ TEST_F(VkLayerTest, SyncCopyLinearMultiPlanarHazards) {
         drm_modifier_ci.pDrmFormatModifiers = &drm_format_mod;
         drm_modifier_ci.drmFormatModifierCount = 1;
         image_ci.pNext = &drm_modifier_ci;
-        VkImageObj image_aa(m_device);
-        image_aa.Init(image_ci);
-        if (image_aa.image() != VK_NULL_HANDLE) {
-            printf("Create DRM_FORMAT_MODIFIER image \n");
-        } else {
-            printf("NOT Create DRM_FORMAT_MODIFIER image \n");
-        }
     }
-    image_ci.tiling = VK_IMAGE_TILING_LINEAR;
 
     // Verify format
     bool supported = ImageFormatAndFeaturesSupported(instance(), gpu(), image_ci,
