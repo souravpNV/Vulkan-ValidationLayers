@@ -300,7 +300,7 @@ TEST_F(VkLayerTest, DebugMarkerNameTest) {
 
     // Test parameter_validation layer
     m_errorMonitor->SetDesiredFailureMsg(kErrorBit, commandBuffer_name);
-    vk::CmdSetScissor(commandBuffer, 1, 1, scissors);
+    vk::CmdSetScissor(commandBuffer, 0, 1, scissors);
     m_errorMonitor->VerifyFound();
 
     // Test object_tracker layer
@@ -469,7 +469,7 @@ TEST_F(VkLayerTest, DebugUtilsNameTest) {
     fpvkCmdInsertDebugUtilsLabelEXT(commandBuffer, &command_label);
     // Test parameter_validation layer
     m_errorMonitor->SetDesiredFailureMsg(kErrorBit, commandBuffer_name);
-    vk::CmdSetScissor(commandBuffer, 1, 1, scissors);
+    vk::CmdSetScissor(commandBuffer, 0, 1, scissors);
     m_errorMonitor->VerifyFound();
 
     // Check the label test
@@ -515,7 +515,17 @@ TEST_F(VkLayerTest, InvalidStructSType) {
 TEST_F(VkLayerTest, InvalidStructPNext) {
     TEST_DESCRIPTION("Specify an invalid value for a Vulkan structure's pNext field");
 
+    if (InstanceExtensionSupported(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)) {
+        m_instance_extension_names.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+    } else {
+        printf("%s Extension %s is not supported.\n", kSkipPrefix, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+        return;
+    }
     ASSERT_NO_FATAL_FAILURE(Init());
+
+    PFN_vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR =
+        (PFN_vkGetPhysicalDeviceProperties2KHR)vk::GetInstanceProcAddr(instance(), "vkGetPhysicalDeviceProperties2KHR");
+    ASSERT_TRUE(vkGetPhysicalDeviceProperties2KHR != nullptr);
 
     m_errorMonitor->SetDesiredFailureMsg(kWarningBit, "value of pCreateInfo->pNext must be NULL");
     // Set VkMemoryAllocateInfo::pNext to a non-NULL value, when pNext must be NULL.
@@ -549,7 +559,7 @@ TEST_F(VkLayerTest, InvalidStructPNext) {
     physical_device_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
     physical_device_properties2.pNext = &app_info;
 
-    vk::GetPhysicalDeviceProperties2(gpu(), &physical_device_properties2);
+    vkGetPhysicalDeviceProperties2KHR(gpu(), &physical_device_properties2);
     m_errorMonitor->VerifyFound();
 }
 
@@ -1483,7 +1493,7 @@ TEST_F(VkLayerTest, SwapchainAcquireTooManyImages) {
     std::vector<VkFenceObj> fences(acquirable_count);
     for (uint32_t i = 0; i < acquirable_count; ++i) {
         fences[i].init(*m_device, VkFenceObj::create_info());
-        uint32_t image_i = i;  // WORKAROUND: MockICD does not modify the value, so we have to or the validator state gets corrupted
+        uint32_t image_i;
         const auto res = vk::AcquireNextImageKHR(device(), m_swapchain, UINT64_MAX, VK_NULL_HANDLE, fences[i].handle(), &image_i);
         ASSERT_TRUE(res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR);
     }
@@ -1536,7 +1546,7 @@ TEST_F(VkLayerTest, SwapchainAcquireTooManyImages2KHR) {
     std::vector<VkFenceObj> fences(acquirable_count);
     for (uint32_t i = 0; i < acquirable_count; ++i) {
         fences[i].init(*m_device, VkFenceObj::create_info());
-        uint32_t image_i = i;  // WORKAROUND: MockICD does not modify the value, so we have to or the validator state gets corrupted
+        uint32_t image_i;
         const auto res = vk::AcquireNextImageKHR(device(), m_swapchain, UINT64_MAX, VK_NULL_HANDLE, fences[i].handle(), &image_i);
         ASSERT_TRUE(res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR);
     }
@@ -1702,7 +1712,7 @@ TEST_F(VkLayerTest, InvalidDeviceMask) {
 
     if (support_surface) {
         // Test VkAcquireNextImageInfoKHR
-        uint32_t imageIndex = 0;
+        uint32_t imageIndex;
         VkAcquireNextImageInfoKHR acquire_next_image_info = {};
         acquire_next_image_info.sType = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
         acquire_next_image_info.semaphore = semaphore;
@@ -2703,7 +2713,11 @@ TEST_F(VkLayerTest, BufferViewInUseDestroyedSignaled) {
     dyn_state_ci.pDynamicStates = dyn_states;
     pipe.dyn_state_ci_ = dyn_state_ci;
     pipe.InitState();
-    pipe.CreateGraphicsPipeline();
+    err = pipe.CreateGraphicsPipeline();
+    if (err != VK_SUCCESS) {
+        printf("%s Unable to compile shader, skipping.\n", kSkipPrefix);
+        return;
+    }
 
     pipe.descriptor_set_->WriteDescriptorBufferView(0, view, VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER);
     pipe.descriptor_set_->UpdateDescriptorSets();
@@ -4327,6 +4341,7 @@ TEST_F(VkLayerTest, AndroidHardwareBufferPhysDevImageFormatProp2) {
     m_errorMonitor->VerifyFound();
 }
 
+#if DISABLEUNTILAHBWORKS
 TEST_F(VkLayerTest, AndroidHardwareBufferCreateImageView) {
     TEST_DESCRIPTION("Verify AndroidHardwareBuffer image view creation.");
 
@@ -4521,6 +4536,7 @@ TEST_F(VkLayerTest, AndroidHardwareBufferCreateImageView) {
     vk::DestroyImage(dev, img, NULL);
     vk::FreeMemory(dev, img_mem, NULL);
 }
+#endif // DISABLEUNTILAHBWORKS
 
 TEST_F(VkLayerTest, AndroidHardwareBufferImportBuffer) {
     TEST_DESCRIPTION("Verify AndroidHardwareBuffer import as buffer.");
@@ -4567,7 +4583,7 @@ TEST_F(VkLayerTest, AndroidHardwareBufferImportBuffer) {
 
     // Allocate an AHardwareBuffer
     ahb_desc.format = AHARDWAREBUFFER_FORMAT_BLOB;
-    ahb_desc.usage = AHARDWAREBUFFER_USAGE_SENSOR_DIRECT_DATA;
+    ahb_desc.usage = AHARDWAREBUFFER_USAGE_SENSOR_DIRECT_DATA;  // non USAGE_GPU_*
     ahb_desc.width = 512;
     ahb_desc.height = 1;
     ahb_desc.layers = 1;

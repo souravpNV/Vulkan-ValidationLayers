@@ -216,14 +216,14 @@ bool CoreChecks::VerifyBoundMemoryIsValid(const DEVICE_MEMORY_STATE *mem_state, 
     bool result = false;
     auto type_name = object_string[typed_handle.type];
     if (!mem_state) {
-        result =
+        result |=
             LogError(object, error_code, "%s: %s used with no memory bound. Memory should be bound by calling vkBind%sMemory().",
                      api_name, report_data->FormatHandle(typed_handle).c_str(), type_name + 2);
     } else if (mem_state->destroyed) {
-        result = LogError(object, error_code,
-                          "%s: %s used with no memory bound and previously bound memory was freed. Memory must not be freed "
-                          "prior to this operation.",
-                          api_name, report_data->FormatHandle(typed_handle).c_str());
+        result |= LogError(object, error_code,
+                           "%s: %s used with no memory bound and previously bound memory was freed. Memory must not be freed "
+                           "prior to this operation.",
+                           api_name, report_data->FormatHandle(typed_handle).c_str());
     }
     return result;
 }
@@ -235,27 +235,29 @@ bool CoreChecks::ValidateMemoryIsBoundToImage(const IMAGE_STATE *image_state, co
         if (image_state->bind_swapchain == VK_NULL_HANDLE) {
             LogObjectList objlist(image_state->image);
             objlist.add(image_state->create_from_swapchain);
-            LogError(objlist, error_code,
-                     "%s: %s is created by %s, and the image should be bound by calling vkBindImageMemory2(), and the pNext chain "
-                     "includes VkBindImageMemorySwapchainInfoKHR.",
-                     api_name, report_data->FormatHandle(image_state->image).c_str(),
-                     report_data->FormatHandle(image_state->create_from_swapchain).c_str());
+            result |= LogError(
+                objlist, error_code,
+                "%s: %s is created by %s, and the image should be bound by calling vkBindImageMemory2(), and the pNext chain "
+                "includes VkBindImageMemorySwapchainInfoKHR.",
+                api_name, report_data->FormatHandle(image_state->image).c_str(),
+                report_data->FormatHandle(image_state->create_from_swapchain).c_str());
         } else if (image_state->create_from_swapchain != image_state->bind_swapchain) {
             LogObjectList objlist(image_state->image);
             objlist.add(image_state->create_from_swapchain);
             objlist.add(image_state->bind_swapchain);
-            LogError(objlist, error_code,
-                     "%s: %s is created by %s, but the image is bound by %s. The image should be created and bound by the same "
-                     "swapchain",
-                     api_name, report_data->FormatHandle(image_state->image).c_str(),
-                     report_data->FormatHandle(image_state->create_from_swapchain).c_str(),
-                     report_data->FormatHandle(image_state->bind_swapchain).c_str());
+            result |=
+                LogError(objlist, error_code,
+                         "%s: %s is created by %s, but the image is bound by %s. The image should be created and bound by the same "
+                         "swapchain",
+                         api_name, report_data->FormatHandle(image_state->image).c_str(),
+                         report_data->FormatHandle(image_state->create_from_swapchain).c_str(),
+                         report_data->FormatHandle(image_state->bind_swapchain).c_str());
         }
     } else if (image_state->external_ahb) {
         // TODO look into how to properly check for a valid bound memory for an external AHB
     } else if (0 == (static_cast<uint32_t>(image_state->createInfo.flags) & VK_IMAGE_CREATE_SPARSE_BINDING_BIT)) {
-        result = VerifyBoundMemoryIsValid(image_state->binding.mem_state.get(), image_state->image,
-                                          VulkanTypedHandle(image_state->image, kVulkanObjectTypeImage), api_name, error_code);
+        result |= VerifyBoundMemoryIsValid(image_state->binding.mem_state.get(), image_state->image,
+                                           VulkanTypedHandle(image_state->image, kVulkanObjectTypeImage), api_name, error_code);
     }
     return result;
 }
@@ -265,8 +267,8 @@ bool CoreChecks::ValidateMemoryIsBoundToBuffer(const BUFFER_STATE *buffer_state,
                                                const char *error_code) const {
     bool result = false;
     if (0 == (static_cast<uint32_t>(buffer_state->createInfo.flags) & VK_BUFFER_CREATE_SPARSE_BINDING_BIT)) {
-        result = VerifyBoundMemoryIsValid(buffer_state->binding.mem_state.get(), buffer_state->buffer,
-                                          VulkanTypedHandle(buffer_state->buffer, kVulkanObjectTypeBuffer), api_name, error_code);
+        result |= VerifyBoundMemoryIsValid(buffer_state->binding.mem_state.get(), buffer_state->buffer,
+                                           VulkanTypedHandle(buffer_state->buffer, kVulkanObjectTypeBuffer), api_name, error_code);
     }
     return result;
 }
@@ -787,7 +789,8 @@ bool CoreChecks::ValidateCmdBufDrawState(const CMD_BUFFER_STATE *cb_node, CMD_TY
     auto const &state = last_bound_it->second;
 
     // First check flag states
-    if (VK_PIPELINE_BIND_POINT_GRAPHICS == bind_point) result = ValidateDrawStateFlags(cb_node, pPipe, indexed, vuid.dynamic_state);
+    if (VK_PIPELINE_BIND_POINT_GRAPHICS == bind_point)
+        result |= ValidateDrawStateFlags(cb_node, pPipe, indexed, vuid.dynamic_state);
 
     // Now complete other state checks
     string errorString;
@@ -2354,16 +2357,6 @@ bool CoreChecks::PreCallValidateGetAndroidHardwareBufferPropertiesANDROID(
     return skip;
 }
 
-void CoreChecks::PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevice device, const struct AHardwareBuffer *buffer,
-                                                                         VkAndroidHardwareBufferPropertiesANDROID *pProperties,
-                                                                         VkResult result) {
-    if (VK_SUCCESS != result) return;
-    auto ahb_format_props = lvl_find_in_chain<VkAndroidHardwareBufferFormatPropertiesANDROID>(pProperties->pNext);
-    if (ahb_format_props) {
-        ahb_ext_formats_set.insert(ahb_format_props->externalFormat);
-    }
-}
-
 bool CoreChecks::PreCallValidateGetMemoryAndroidHardwareBufferANDROID(VkDevice device,
                                                                       const VkMemoryGetAndroidHardwareBufferInfoANDROID *pInfo,
                                                                       struct AHardwareBuffer **pBuffer) const {
@@ -2426,11 +2419,17 @@ bool CoreChecks::ValidateAllocateMemoryANDROID(const VkMemoryAllocateInfo *alloc
             uint64_t ahb_equiv_usage_bits = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
                                             AHARDWAREBUFFER_USAGE_GPU_CUBE_MAP | AHARDWAREBUFFER_USAGE_GPU_MIPMAP_COMPLETE |
                                             AHARDWAREBUFFER_USAGE_PROTECTED_CONTENT;
-            if ((0 == (ahb_desc.usage & ahb_equiv_usage_bits)) || (0 == ahb_format_map_a2v.count(ahb_desc.format))) {
-                skip |= LogError(device, "VUID-VkImportAndroidHardwareBufferInfoANDROID-buffer-01881",
-                                 "vkAllocateMemory: The AHardwareBuffer_Desc's format ( %u ) and/or usage ( 0x%" PRIx64
-                                 " ) are not compatible with Vulkan.",
-                                 ahb_desc.format, ahb_desc.usage);
+            if (0 == (ahb_desc.usage & ahb_equiv_usage_bits)) {
+                skip |=
+                    LogError(device, "VUID-VkImportAndroidHardwareBufferInfoANDROID-buffer-01881",
+                             "vkAllocateMemory: The AHardwareBuffer_Desc's usage (0x%" PRIx64 ") is not compatible with Vulkan.",
+                             ahb_desc.usage);
+            }
+            if (0 == ahb_format_map_a2v.count(ahb_desc.format)) {
+                skip |=
+                    LogError(device, "VUID-VkImportAndroidHardwareBufferInfoANDROID-buffer-01881",
+                             "vkAllocateMemory: The AHardwareBuffer_Desc's format (0x%" PRIx32 ") is not compatible with Vulkan.",
+                             ahb_desc.format);
             }
         }
 
@@ -2599,23 +2598,24 @@ bool CoreChecks::ValidateAllocateMemoryANDROID(const VkMemoryAllocateInfo *alloc
                 skip |=
                     LogError(device, "VUID-VkMemoryAllocateInfo-pNext-02390",
                              "vkAllocateMemory: VkMemoryAllocateInfo struct with chained VkImportAndroidHardwareBufferInfoANDROID, "
-                             "dedicated image usage bits include one or more with no AHardwareBuffer equivalent.");
+                             "dedicated image usage bits (0x%" PRIx64
+                             ") include an issue not listed in the AHardwareBuffer Usage Equivalence table.",
+                             ici->usage);
             }
 
-            bool illegal_usage = false;
             std::vector<VkImageUsageFlags> usages = {VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
                                                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
             for (VkImageUsageFlags ubit : usages) {
                 if (ici->usage & ubit) {
                     uint64_t ahb_usage = ahb_usage_map_v2a[ubit];
-                    if (0 == (ahb_usage & ahb_desc.usage)) illegal_usage = true;
+                    if (0 == (ahb_usage & ahb_desc.usage)) {
+                        skip |= LogError(
+                            device, "VUID-VkMemoryAllocateInfo-pNext-02390",
+                            "vkAllocateMemory: VkMemoryAllocateInfo struct with chained VkImportAndroidHardwareBufferInfoANDROID, "
+                            "The dedicated image usage bit %s equivalent is not in AHardwareBuffer_Desc.usage (0x%" PRIx64 ") ",
+                            string_VkImageUsageFlags(ubit).c_str(), ahb_desc.usage);
+                    }
                 }
-            }
-            if (illegal_usage) {
-                skip |= LogError(device, "VUID-VkMemoryAllocateInfo-pNext-02390",
-                                 "vkAllocateMemory: VkMemoryAllocateInfo struct with chained "
-                                 "VkImportAndroidHardwareBufferInfoANDROID, one or more AHardwareBuffer usage bits equivalent to "
-                                 "the provided image's usage bits are missing from AHardwareBuffer_Desc.usage.");
             }
         }
     } else {  // Not an import
@@ -2676,18 +2676,21 @@ bool CoreChecks::ValidateGetPhysicalDeviceImageFormatProperties2ANDROID(
     return skip;
 }
 
-bool CoreChecks::ValidateCreateSamplerYcbcrConversionANDROID(const VkSamplerYcbcrConversionCreateInfo *create_info) const {
+bool CoreChecks::ValidateCreateSamplerYcbcrConversionANDROID(const char *func_name,
+                                                             const VkSamplerYcbcrConversionCreateInfo *create_info) const {
     const VkExternalFormatANDROID *ext_format_android = lvl_find_in_chain<VkExternalFormatANDROID>(create_info->pNext);
     if ((nullptr != ext_format_android) && (0 != ext_format_android->externalFormat)) {
         if (VK_FORMAT_UNDEFINED != create_info->format) {
             return LogError(device, "VUID-VkSamplerYcbcrConversionCreateInfo-format-01904",
-                            "vkCreateSamplerYcbcrConversion[KHR]: CreateInfo format is not VK_FORMAT_UNDEFINED while "
-                            "there is a chained VkExternalFormatANDROID struct.");
+                            "%s: CreateInfo format is not VK_FORMAT_UNDEFINED while "
+                            "there is a chained VkExternalFormatANDROID struct with a non-zero externalFormat.",
+                            func_name);
         }
     } else if (VK_FORMAT_UNDEFINED == create_info->format) {
         return LogError(device, "VUID-VkSamplerYcbcrConversionCreateInfo-format-01904",
-                        "vkCreateSamplerYcbcrConversion[KHR]: CreateInfo format is VK_FORMAT_UNDEFINED with no chained "
-                        "VkExternalFormatANDROID struct.");
+                        "%s: CreateInfo format is VK_FORMAT_UNDEFINED with no chained "
+                        "VkExternalFormatANDROID struct with a non-zero externalFormat.",
+                        func_name);
     }
     return false;
 }
@@ -2701,7 +2704,8 @@ bool CoreChecks::ValidateGetPhysicalDeviceImageFormatProperties2ANDROID(
     return false;
 }
 
-bool CoreChecks::ValidateCreateSamplerYcbcrConversionANDROID(const VkSamplerYcbcrConversionCreateInfo *create_info) const {
+bool CoreChecks::ValidateCreateSamplerYcbcrConversionANDROID(const char *func_name,
+                                                             const VkSamplerYcbcrConversionCreateInfo *create_info) const {
     return false;
 }
 
@@ -2987,8 +2991,16 @@ bool CoreChecks::PreCallValidateCreateSemaphore(VkDevice device, const VkSemapho
     return skip;
 }
 
+bool CoreChecks::PreCallValidateWaitSemaphores(VkDevice device, const VkSemaphoreWaitInfoKHR *pWaitInfo, uint64_t timeout) const {
+    return ValidateWaitSemaphores(device, pWaitInfo, timeout);
+}
+
 bool CoreChecks::PreCallValidateWaitSemaphoresKHR(VkDevice device, const VkSemaphoreWaitInfoKHR *pWaitInfo,
                                                   uint64_t timeout) const {
+    return ValidateWaitSemaphores(device, pWaitInfo, timeout);
+}
+
+bool CoreChecks::ValidateWaitSemaphores(VkDevice device, const VkSemaphoreWaitInfoKHR *pWaitInfo, uint64_t timeout) const {
     bool skip = false;
 
     for (uint32_t i = 0; i < pWaitInfo->semaphoreCount; i++) {
@@ -4609,6 +4621,57 @@ static const char *GetPipelineTypeName(VkPipelineBindPoint pipelineBindPoint) {
     }
 }
 
+bool CoreChecks::ValidateGraphicsPipelineBindPoint(const CMD_BUFFER_STATE *cb_state, const PIPELINE_STATE *pipeline_state) const {
+    bool skip = false;
+    const FRAMEBUFFER_STATE *fb_state = GetFramebufferState(cb_state->activeFramebuffer);
+
+    if (fb_state) {
+        auto subpass_desc = &pipeline_state->rp_state->createInfo.pSubpasses[pipeline_state->graphicsPipelineCI.subpass];
+
+        for (size_t i = 0; i < pipeline_state->attachments.size(); i++) {
+            const auto attachment = subpass_desc->pColorAttachments[i].attachment;
+            if (attachment == VK_ATTACHMENT_UNUSED) continue;
+
+            const IMAGE_VIEW_STATE *imageview_state = GetImageViewState(fb_state->createInfo.pAttachments[attachment]);
+            if (!imageview_state) continue;
+
+            const IMAGE_STATE *image_state = GetImageState(imageview_state->create_info.image);
+            if (!image_state) continue;
+
+            VkImageTiling tiling = image_state->createInfo.tiling;
+            VkFormat format = pipeline_state->rp_state->createInfo.pAttachments[attachment].format;
+
+            VkFormatProperties properties = GetPDFormatProperties(format);
+            VkFormatFeatureFlags format_features;
+
+            switch (tiling) {
+                case VK_IMAGE_TILING_OPTIMAL:
+                case VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT:
+                    format_features = properties.optimalTilingFeatures;
+                    break;
+                case VK_IMAGE_TILING_LINEAR:
+                    format_features = properties.linearTilingFeatures;
+                    break;
+                default:
+                    // Invalid tiling
+                    continue;
+            }
+
+            if (pipeline_state->graphicsPipelineCI.pRasterizationState &&
+                !pipeline_state->graphicsPipelineCI.pRasterizationState->rasterizerDiscardEnable &&
+                pipeline_state->attachments[i].blendEnable && !(format_features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT)) {
+                skip |= LogError(device, "VUID-VkGraphicsPipelineCreateInfo-blendEnable-02023",
+                                 "vkCreateGraphicsPipelines(): pipeline.pColorBlendState.pAttachments[" PRINTF_SIZE_T_SPECIFIER
+                                 "].blendEnable is VK_TRUE but format %s associated with this attachment does "
+                                 "not support VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT.",
+                                 i, string_VkFormat(format));
+            }
+        }
+    }
+
+    return skip;
+}
+
 bool CoreChecks::PreCallValidateCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
                                                 VkPipeline pipeline) const {
     const CMD_BUFFER_STATE *cb_state = GetCBState(commandBuffer);
@@ -4643,6 +4706,9 @@ bool CoreChecks::PreCallValidateCmdBindPipeline(VkCommandBuffer commandBuffer, V
                              "Cannot bind a pipeline of type %s to the ray-tracing pipeline bind point",
                              GetPipelineTypeName(pipeline_state_bind_point));
         }
+    } else {
+        if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS)
+            skip |= ValidateGraphicsPipelineBindPoint(cb_state, pipeline_state);
     }
 
     return skip;
@@ -7801,9 +7867,9 @@ bool CoreChecks::AddAttachmentUse(RenderPassCreateVersion rp_version, uint32_t s
     if (uses & new_use) {
         if (attachment_layouts[attachment] != new_layout) {
             vuid = use_rp2 ? "VUID-VkSubpassDescription2-layout-02528" : "VUID-VkSubpassDescription-layout-02519";
-            LogError(device, vuid, "%s: subpass %u already uses attachment %u with a different image layout (%s vs %s).",
-                     function_name, subpass, attachment, string_VkImageLayout(attachment_layouts[attachment]),
-                     string_VkImageLayout(new_layout));
+            skip |= LogError(device, vuid, "%s: subpass %u already uses attachment %u with a different image layout (%s vs %s).",
+                             function_name, subpass, attachment, string_VkImageLayout(attachment_layouts[attachment]),
+                             string_VkImageLayout(new_layout));
         }
     } else if (uses & ~ATTACHMENT_INPUT || (uses && (new_use == ATTACHMENT_RESOLVE || new_use == ATTACHMENT_PRESERVE))) {
         /* Note: input attachments are assumed to be done first. */
@@ -9070,12 +9136,12 @@ bool CoreChecks::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuffer
                     layout_type = "initial";
                 }
                 if ((cb_layout != kInvalidLayout) && (cb_layout != sub_layout)) {
-                    LogError(pCommandBuffers[i], "UNASSIGNED-vkCmdExecuteCommands-commandBuffer-00001",
-                             "%s: Executed secondary command buffer using %s (subresource: aspectMask 0x%X array layer %u, "
-                             "mip level %u) which expects layout %s--instead, image %s layout is %s.",
-                             "vkCmdExecuteCommands():", report_data->FormatHandle(image).c_str(), subresource.aspectMask,
-                             subresource.arrayLayer, subresource.mipLevel, string_VkImageLayout(sub_layout), layout_type,
-                             string_VkImageLayout(cb_layout));
+                    skip |= LogError(pCommandBuffers[i], "UNASSIGNED-vkCmdExecuteCommands-commandBuffer-00001",
+                                     "%s: Executed secondary command buffer using %s (subresource: aspectMask 0x%X array layer %u, "
+                                     "mip level %u) which expects layout %s--instead, image %s layout is %s.",
+                                     "vkCmdExecuteCommands():", report_data->FormatHandle(image).c_str(), subresource.aspectMask,
+                                     subresource.arrayLayer, subresource.mipLevel, string_VkImageLayout(sub_layout), layout_type,
+                                     string_VkImageLayout(cb_layout));
                 }
             }
         }
@@ -10205,7 +10271,7 @@ bool CoreChecks::PreCallValidateQueuePresentKHR(VkQueue queue, const VkPresentIn
                 "VkQueuePresent: %s is not a VK_SEMAPHORE_TYPE_BINARY_KHR",
                 report_data->FormatHandle(pPresentInfo->pWaitSemaphores[i]).c_str());
         }
-        if (pSemaphore && (!pSemaphore->signaled || !SemaphoreWasSignaled(pPresentInfo->pWaitSemaphores[i]))) {
+        if (pSemaphore && !pSemaphore->signaled && !SemaphoreWasSignaled(pPresentInfo->pWaitSemaphores[i])) {
             LogObjectList objlist(queue);
             objlist.add(pPresentInfo->pWaitSemaphores[i]);
             skip |= LogError(objlist, "VUID-vkQueuePresentKHR-pWaitSemaphores-03268",
@@ -10762,7 +10828,7 @@ bool CoreChecks::ValidateCreateSamplerYcbcrConversion(const char *func_name,
                                                       const VkSamplerYcbcrConversionCreateInfo *create_info) const {
     bool skip = false;
     if (device_extensions.vk_android_external_memory_android_hardware_buffer) {
-        skip |= ValidateCreateSamplerYcbcrConversionANDROID(create_info);
+        skip |= ValidateCreateSamplerYcbcrConversionANDROID(func_name, create_info);
     } else {  // Not android hardware buffer
         if (VK_FORMAT_UNDEFINED == create_info->format) {
             skip |= LogError(device, "VUID-VkSamplerYcbcrConversionCreateInfo-format-01649",
